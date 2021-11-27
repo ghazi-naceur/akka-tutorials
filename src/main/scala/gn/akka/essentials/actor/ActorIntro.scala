@@ -26,11 +26,47 @@ object ActorIntro {
     println(actorSystem.name)
 
     // part 2 - Create actors
-    class WordCount extends Actor {
-      override def receive: PartialFunction[Any, Unit] = {
-        case message:
+    class WordCountActor extends Actor {
+      // internal data
+      var totalWords = 0
+
+      // behavior
+      // 'PartialFunction[Any, Unit]', aliased as 'Receive'
+      override def receive: Receive = {
+        case message: String =>
+          println(s"Received message: '$message'")
+          totalWords += message.split(" ").length
+        case msg => println(s"Weird message: '$msg'")
       }
     }
-    actorSystem.actorOf(Props[String])
+
+    // part 3 - instantiate actor
+    val wordCounter = actorSystem.actorOf(Props[WordCountActor], "wordCounter")
+    val anotherWordCounter = actorSystem.actorOf(Props[WordCountActor], "anotherWordCounter")
+
+    // part 4 - communicate or send message asynchronously
+    wordCounter ! "Learning Akka!"
+    anotherWordCounter ! "Learning Akka again!"
+
+    // How to instantiate an Actor argument ?
+    // solution 1 (discouraged): instantiating with 'new' inside 'Props'
+    class Person(name: String) extends Actor {
+      override def receive: Receive = {
+        case "hi" => println(s"Hi $name !")
+        case _ =>
+      }
+    }
+
+    val person = actorSystem.actorOf(Props(new Person("Isaac")))
+    person ! "hi"
+
+    // solution 2 (best practise): Using a companion object that returns a Props object ==>
+    // We won't create a new instance of Person ourselves, but the factory method will do that for us
+    object Person {
+      def props(name: String): Props = Props(new Person(name))
+    }
+
+    val anotherPerson = actorSystem.actorOf(Person.props("Sishui"))
+    anotherPerson ! "hi"
   }
 }
