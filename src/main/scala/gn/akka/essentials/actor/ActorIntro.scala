@@ -2,6 +2,7 @@ package gn.akka.essentials.actor
 
 import akka.actor.{Actor, ActorSystem, Props}
 
+// 1
 object ActorIntro {
 
   // With traditional objects:
@@ -66,7 +67,7 @@ object ActorIntro {
       def props(name: String): Props = Props(new Person(name))
     }
 
-    val anotherPerson = actorSystem.actorOf(Person.props("Sishui"))
+    val anotherPerson = actorSystem.actorOf(Person.props("Shisui"))
     anotherPerson ! "hi"
   }
 }
