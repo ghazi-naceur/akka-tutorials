@@ -4,6 +4,7 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import gn.akka.essentials.actor.ActorExercises.BankAccount.{Deposit, Statement, Withdraw}
 import gn.akka.essentials.actor.ActorExercises.Person.Revenue
 
+// 3
 object ActorExercises {
 
   class CounterActor extends Actor {
