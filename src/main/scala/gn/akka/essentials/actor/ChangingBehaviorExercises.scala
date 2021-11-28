@@ -31,32 +31,38 @@ object ChangingBehaviorExercises {
   case object VoteStatusRequest
   case class VoteStatusReply(candidate: Option[String])
   class Citizen extends Actor {
-    var candidate: Option[String] = None
     override def receive: Receive = {
-      case Vote(c)           => candidate = Some(c)
-      case VoteStatusRequest => sender() ! VoteStatusReply(candidate)
+      case Vote(c)           => context.become(voted(c))
+      case VoteStatusRequest => sender() ! VoteStatusReply(None)
+    }
+
+    def voted(candidate: String): Receive = {
+      case VoteStatusRequest => sender() ! VoteStatusReply(Some(candidate))
     }
   }
 
   case class AggregateVotes(citizens: Set[ActorRef])
   class VoteAggregator extends Actor {
-    var stillWaiting: Set[ActorRef] = Set()
-    var currentStats: Map[String, Int] = Map()
 
-    override def receive: Receive = {
+    override def receive: Receive = awaitingCommand
+
+    def awaitingCommand: Receive = {
       case AggregateVotes(citizens) =>
-        stillWaiting = citizens
         citizens.foreach(citizen => citizen ! VoteStatusRequest)
+        context.become(awaitingStates(citizens, Map()))
+    }
+
+    def awaitingStates(stillWaiting: Set[ActorRef], currentStats: Map[String, Int]): Receive = {
       case VoteStatusReply(None) => // a citizen hasn't voted yet
         sender() ! VoteStatusRequest // this might end up in an infinite loop, if the candidate doesn't vote
       case VoteStatusReply(Some(candidate)) =>
         val newStillWaiting = stillWaiting - sender()
         val currentVotesOfCandidate = currentStats.getOrElse(candidate, 0)
-        currentStats = currentStats + (candidate -> (currentVotesOfCandidate + 1))
+        val newStats = currentStats + (candidate -> (currentVotesOfCandidate + 1))
         if (newStillWaiting.isEmpty)
-          println(s"Poll stats: $currentStats")
+          println(s"Poll stats: $newStats")
         else
-          stillWaiting = newStillWaiting
+          context.become(awaitingStates(newStillWaiting, newStats))
     }
   }
 
