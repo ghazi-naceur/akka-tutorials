@@ -30,16 +30,18 @@ object ChangingActorBehavior {
 
     override def receive: Receive = happyReceive
     def happyReceive: Receive = {
-      case Food(VEGETABLES) => // change my receive handler to sadReceive
-        context.become(sadReceive)
+      case Food(VEGETABLES) => context.become(sadReceive, discardOld = false)
+//        context.unbecome()
       case Food(CHOCOLATE) =>
-      case Ask(_)          => sender() ! Accept
+//        context.become(happyReceive, discardOld = false)
+      // discardOld = true: discard the old message handler == fully replace the old message handler
+      // discardOld = false: stack the new message handler into a stack of message handlers
+      case Ask(_) => sender() ! Accept
     }
     def sadReceive: Receive = {
-      case Food(VEGETABLES) =>
-      case Food(CHOCOLATE) => // change my receive handler to happyReceive
-        context.become(happyReceive)
-      case Ask(_) => sender() ! Reject
+      case Food(VEGETABLES) => context.become(sadReceive, discardOld = false)
+      case Food(CHOCOLATE)  => context.unbecome()
+      case Ask(_)           => sender() ! Reject
     }
 
   }
@@ -50,6 +52,9 @@ object ChangingActorBehavior {
     override def receive: Receive = {
       case Start(kid) =>
         kid ! Food(VEGETABLES)
+        kid ! Food(VEGETABLES)
+        kid ! Food(CHOCOLATE)
+        kid ! Food(CHOCOLATE)
         kid ! Ask("Do you want to play?")
       case Accept => println("The kid is happy")
       case Reject => println("The kid is sad")
@@ -80,6 +85,41 @@ object ChangingActorBehavior {
       *    statelessKid receives Ask(play?) => statelessKid will reply with 'sadReceive' handler
       * Mom receives Reject
       *
+      */
+
+    /**
+      * 1- With context become:
+      *
+      * - Input :
+      * Food(veg, false) -> message handler turns to 'sadReceive' => stack.push(sadReceive)
+      * Food(choco, false) -> message handler turns to 'happyReceive' => stack.push(happyReceive)
+      *
+      * - Result:
+      * Stack: (read from bottom to top)
+      * 1- happyReceive
+      * 2- sadReceive
+      * 3- initiated as happyReceive
+      *
+      * To pop the content of this stack to return to the previous state, we use the 'unbecome' method
+      *
+      * 2- With context unbecome:
+      *
+      * - Input:
+      * Food(veg)
+      * Food(veg)
+      * Food(choco)
+      * Food(choco)
+      *
+      * - Result:
+      * Stack: (read from bottom to top)
+      * 1- happyReceive (initiation)
+      * -- receiving a 2nd choco, will pop the last sadReceive, and we'll have happyReceive
+      * 1- sadReceive
+      * 2- happyReceive (initiation)
+      * -- Receiving a choco here, will pop the 2- sadReceive (so we'll have 3- sadReceive)
+      * 2- sadReceive
+      * 3- sadReceive
+      * 4- happyReceive (initiation)
       */
   }
 }
