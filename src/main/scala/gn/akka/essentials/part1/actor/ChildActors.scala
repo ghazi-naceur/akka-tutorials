@@ -1,6 +1,8 @@
 package gn.akka.essentials.part1.actor
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import gn.akka.essentials.part1.actor.ChildActors.CreditCard.{AttachedToAccount, CheckStatus}
+import gn.akka.essentials.part1.actor.ChildActors.Parent.{CreateChild, TellChild}
 
 // 6
 object ChildActors {

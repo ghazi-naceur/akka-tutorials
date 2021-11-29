@@ -1,7 +1,8 @@
 package gn.akka.essentials.part1.actor
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
-
+import gn.akka.essentials.part1.actor.ActorExercises.BankAccount.{Deposit, Statement, Withdraw}
+import gn.akka.essentials.part1.actor.ActorExercises.Person.Revenue
 // 3
 object ActorExercises {
 
