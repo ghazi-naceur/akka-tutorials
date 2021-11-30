@@ -1,6 +1,5 @@
 package gn.akka.essentials.part2.testing
 
-import akka.actor.FSM.Event
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
 import akka.testkit.{EventFilter, ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
