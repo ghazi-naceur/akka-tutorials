@@ -3,6 +3,7 @@ package gn.akka.essentials.part3.faulttolerance
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Kill, PoisonPill, Props, Terminated}
 import gn.akka.essentials.part3.faulttolerance.StartingStoppingActors.Parent.{StartChild, Stop, StopChild}
 
+// 1
 object StartingStoppingActors {
 
   class Parent extends Actor with ActorLogging {
