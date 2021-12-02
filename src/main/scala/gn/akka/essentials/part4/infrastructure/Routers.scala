@@ -12,6 +12,7 @@ import akka.routing.{
 }
 import com.typesafe.config.ConfigFactory
 
+// 2
 object Routers {
 
   /**
