@@ -11,6 +11,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
 import scala.language.postfixOps
 
+// 2
 object IntegratingWithExternalServices extends App {
   implicit val system: ActorSystem = ActorSystem("IntegratingWithExternalServices")
   import akka.stream.Materializer.matFromSystem
