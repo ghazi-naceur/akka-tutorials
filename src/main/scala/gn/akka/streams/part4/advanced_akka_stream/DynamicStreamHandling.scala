@@ -8,6 +8,7 @@ import akka.stream.{FlowShape, Graph, KillSwitches, UniqueKillSwitch}
 import scala.concurrent.duration.DurationInt
 import scala.language.postfixOps
 
+// 1
 object DynamicStreamHandling extends App {
   implicit val system: ActorSystem = ActorSystem("DynamicStreamHandling")
   import akka.stream.Materializer.matFromSystem
