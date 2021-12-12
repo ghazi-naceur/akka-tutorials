@@ -5,6 +5,7 @@ import akka.event.LoggingAdapter
 import akka.http.javadsl.model
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpRequest, StatusCodes}
+import akka.http.scaladsl.server.Route
 
 // 2
 object DirectivesBreakdown extends App {
@@ -127,4 +128,80 @@ object DirectivesBreakdown extends App {
       }
     }
 
+  // 3- Composite directives
+
+  val simpleNestedRoute =
+    path("api" / "item") {
+      get {
+        complete(StatusCodes.OK)
+      }
+    }
+  // or rewrite it in a more compacted way:
+  val compactSimpleNestedRoute = (path("api" / "item") & get) { // A composite filtering directive (2 fil dir in 1)
+    complete(StatusCodes.OK)
+  }
+
+  val compactExtractRequestRoute =
+    (path("controlEndpoint") & extractRequest & extractLog) { (request, log) =>
+      // If you add some extraction directives like 'extractRequest' and 'extractLog', their arguments will be included
+      // in the right side of the composite function respectively '(request, log)'
+      // This whole composite directive '(path("controlEndpoint") & extractRequest & extractLog)' is a filter and extraction
+      // directive.
+      log.info(s"Receiving a HTTP Request: '$request'")
+      complete(StatusCodes.OK)
+    }
+
+  //  /about and /aboutUs
+  val repeatedRoute =
+    path("about") {
+      complete(StatusCodes.OK)
+    } ~
+      path("aboutUs") {
+        complete(StatusCodes.OK)
+      }
+  // or simply
+  val dryRoute: Route = (path("about") | path("aboutUs")) {
+    complete(StatusCodes.OK)
+  }
+
+  //  yourblog.com/42 and yourblog.com/postId=42
+  val blogByIdRoute =
+    path(IntNumber) { (blogId: Int) =>
+      // complex server logic
+      complete(StatusCodes.OK)
+    }
+
+  val blogByQueryParamRoute =
+    parameter('postId.as[Int]) { (postId: Int) =>
+      // the same server logic
+      complete(StatusCodes.OK)
+    }
+
+  // Unifying 'blogByIdRoute' and 'blogByQueryParamRoute':
+  val combinedBlogByIdRoute =
+    (path(IntNumber) | parameter('postId.as[Int])) { (blogPostId: Int) => // only 1 param returned
+      // 2 extraction directives => 1 combined extraction directive
+      // These 2 extraction directives must of the same type. In our case, it's 'Int'
+
+      // the same server logic
+      complete(StatusCodes.OK)
+    }
+
+  // 4- 'Actionable' directives
+
+  val completeOkRoute = complete(StatusCodes.OK)
+
+  val failedRoute =
+    path("notSupported") {
+      failWith(new RuntimeException("Unsupported"))
+      // Throws an exception in the server and returns 500 (Internal Server Error)
+    }
+
+  val rejectedRoute =
+    path("rejected") {
+      reject
+    } ~
+      path("index") {
+        completeOkRoute
+      }
 }
