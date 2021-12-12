@@ -5,14 +5,26 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpMethods, HttpRequest, HttpResponse, StatusCodes, Uri}
 import akka.pattern.ask
 import akka.util.Timeout
-import gn.akka.http.part1.low_level_server.GuitarDB.{CreateGuitar, FindAllGuitars, GuitarCreated}
+import gn.akka.http.part1.low_level_server.GuitarDB.{
+  AddQuantity,
+  CreateGuitar,
+  FindAllGuitars,
+  FindGuitarById,
+  FindGuitarInStock,
+  GuitarCreated
+}
 import spray.json.{DefaultJsonProtocol, RootJsonFormat}
 
 import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
 import scala.language.postfixOps
 
-case class Guitar(make: String, model: String)
+/*
+ Enhancing the Guitar case class with a quantity field, by default = 0
+  - GET to /api/guitar/inventory?inStock=true or false, which returns the guitars in stock as a JSON
+  - POST to /api/guitar/inventory?id=X&quantity=Y, which adds Y guitars to the stock for Guitar with id X
+ */
+case class Guitar(make: String, model: String, quantity: Int = 0)
 
 class GuitarDB extends Actor with ActorLogging {
   import GuitarDB._
@@ -31,6 +43,21 @@ class GuitarDB extends Actor with ActorLogging {
       guitars = guitars + (currentGuitarId -> guitar)
       sender() ! GuitarCreated(currentGuitarId)
       currentGuitarId += 1
+    case AddQuantity(id, quantity) =>
+      log.info(s"Trying to add '$quantity' items for guitar '$id'")
+      val guitar: Option[Guitar] = guitars.get(id)
+      val newGuitar: Option[Guitar] = guitar.map {
+        case Guitar(make, model, q) => Guitar(make, model, q + quantity)
+      }
+      newGuitar.foreach(guitar => guitars = guitars + (id -> guitar))
+      sender() ! newGuitar // Sending an Option[Guitar]
+    case FindGuitarInStock(inStock) =>
+      log.info(s"Searching for all guitars either ${if (inStock) "in" else "out"} of stock")
+      if (inStock)
+        sender() ! guitars.values.filter(_.quantity > 0)
+      else
+        sender() ! guitars.values.filter(_.quantity == 0)
+
   }
 }
 
@@ -39,13 +66,15 @@ object GuitarDB {
   case class GuitarCreated(id: Int)
   case class FindGuitarById(id: Int)
   case object FindAllGuitars
+  case class AddQuantity(id: Int, quantity: Int)
+  case class FindGuitarInStock(inStock: Boolean)
 }
 
 // step2
 trait GuitarStoreJsonProtocol extends DefaultJsonProtocol {
   // step3
-  implicit val guitarFormat: RootJsonFormat[Guitar] = jsonFormat2(Guitar)
-  // 'jsonFormat2', because 'Guitar' has 2 arguments
+  implicit val guitarFormat: RootJsonFormat[Guitar] = jsonFormat3(Guitar)
+  // 'jsonFormat3', because 'Guitar' has 3 arguments
 }
 
 // 3
@@ -56,8 +85,10 @@ object LowLevelRest extends App with GuitarStoreJsonProtocol {
   import system.dispatcher
 
   /*
-      GET localhost:8000/api/guitar => all the guitars in the store
-      POST localhost:8000/api/guitar => insert the guitar into the store
+      1- GET localhost:8000/api/guitar      => all the guitars in the store
+      2- POST localhost:8000/api/guitar     => insert the guitar into the store
+      3- GET localhost:8000/api/guitar?id=X => fetches the guitar associated with id X
+
 
       marshalling: the process of serializing data to a wire format that the HTTP  client can understand
       CASE CLASS --(marshalling/serializing)--> JSON
@@ -75,7 +106,8 @@ object LowLevelRest extends App with GuitarStoreJsonProtocol {
     """
       |{
       |  "make": "Fender",
-      |  "model": "Stratocaster"
+      |  "model": "Stratocaster",
+      |  "quantity": 10
       |}
       |""".stripMargin
   println(simpleGuitarJsonString.parseJson.convertTo[Guitar])
@@ -92,14 +124,74 @@ object LowLevelRest extends App with GuitarStoreJsonProtocol {
   // a 'HttpRequest' and sends back a 'Future[HttpResponse]'. In general, each time you need to interact with external
   // services use 'Future', otherwise the response time will be very bad
   implicit val timeout: Timeout = Timeout(2 seconds)
+
+  def getGuitar(query: Uri.Query): Future[HttpResponse] = {
+    val guitarId = query.get("id").map(_.toInt) // Option[Int]
+    guitarId match {
+      case Some(id: Int) =>
+        val guitarFuture: Future[Option[Guitar]] = (guitarDb ? FindGuitarById(id)).mapTo[Option[Guitar]]
+        guitarFuture.map {
+          case None => HttpResponse(StatusCodes.NotFound)
+          case Some(guitar) =>
+            HttpResponse(entity = HttpEntity(ContentTypes.`application/json`, guitar.toJson.prettyPrint))
+        }
+      case None => Future(HttpResponse(StatusCodes.NotFound))
+    }
+  }
+
   val requestHandler: HttpRequest => Future[HttpResponse] = {
-    case HttpRequest(HttpMethods.GET, Uri.Path("/api/guitar"), _, _, _) =>
-      val guitarsFuture: Future[List[Guitar]] = (guitarDb ? FindAllGuitars).mapTo[List[Guitar]]
-      // '(guitarDb ? FindAllGuitars)' returns a Future and it can't be type, so we add 'mapTo[List[Guitar]]' to type it
-      guitarsFuture.map { guitars =>
-        HttpResponse(entity = HttpEntity(ContentTypes.`application/json`, guitars.toJson.prettyPrint))
+
+    case HttpRequest(HttpMethods.POST, uri @ Uri.Path("/api/guitar/inventory"), _, _, _) =>
+      val query = uri.query()
+      val guitarId: Option[Int] = query.get("id").map(_.toInt)
+      val guitarQuantity: Option[Int] = query.get("quantity").map(_.toInt)
+
+      val validGuitarResponseFuture: Option[Future[HttpResponse]] = for {
+        id <- guitarId
+        quantity <- guitarQuantity
+      } yield {
+        // Constructing a http response
+        val newGuitarFuture: Future[Option[Guitar]] = (guitarDb ? AddQuantity(id, quantity)).mapTo[Option[Guitar]]
+        // 'Option[Guitar]' send back from GuitarDB handling the message 'AddQuantity'
+        newGuitarFuture.map(_ => HttpResponse(StatusCodes.OK))
       }
-    // So basically here, we're trying to construct a Future[HttpResponse] from the 'Future[List[Guitar]]'.
+
+      validGuitarResponseFuture.getOrElse(Future(HttpResponse(StatusCodes.BadRequest)))
+
+    case HttpRequest(HttpMethods.GET, uri @ Uri.Path("/api/guitar/inventory"), _, _, _) =>
+      val query = uri.query()
+      val inStockOption = query.get("inStock").map(_.toBoolean)
+      // Sending a message to the GuitarDB to fetch all guitars in/out of stock
+      inStockOption match {
+        case Some(inStock) =>
+          val guitarsFuture: Future[List[Guitar]] = (guitarDb ? FindGuitarInStock(inStock)).mapTo[List[Guitar]]
+          guitarsFuture.map { guitars =>
+            HttpResponse(entity = HttpEntity(ContentTypes.`application/json`, guitars.toJson.prettyPrint))
+          }
+        case None => Future(HttpResponse(StatusCodes.BadRequest))
+
+      }
+
+    case HttpRequest(HttpMethods.GET, uri @ Uri.Path("/api/guitar"), _, _, _) =>
+      /*
+        Query parameter handling code here:
+        eg: localhost:8010/api/guitar?param1=value1&param2=value2
+        These query parameters in Akka HTTP are stored in some kind of a Map, in the form of Query Object
+       */
+      val query = uri.query() // Query object, similar to a Map[String, String]
+
+      if (query.isEmpty) {
+        val guitarsFuture: Future[List[Guitar]] = (guitarDb ? FindAllGuitars).mapTo[List[Guitar]]
+        // '(guitarDb ? FindAllGuitars)' returns a Future and it can't be type, so we add 'mapTo[List[Guitar]]' to type it
+        guitarsFuture.map { guitars =>
+          HttpResponse(entity = HttpEntity(ContentTypes.`application/json`, guitars.toJson.prettyPrint))
+        }
+        // So basically here, we're trying to construct a Future[HttpResponse] from the 'Future[List[Guitar]]'.
+      } else {
+        // fetch guitar associated to guitar id
+        // localhost:8010/api/guitar?id=2
+        getGuitar(query)
+      }
 
     case HttpRequest(HttpMethods.POST, Uri.Path("/api/guitar"), _, entity: HttpEntity, _) =>
       // 'entity' is a stream-based data structure modeled as a 'Source[ByteString]'.. This might a problem when trying
@@ -131,5 +223,10 @@ object LowLevelRest extends App with GuitarStoreJsonProtocol {
   Http().bindAndHandleAsync(requestHandler, "localhost", 8010)
 
   //Run app and execute this curl in your terminal:
+  // curl -XPOST -H "Content-Type: application/json" http://localhost:8010/api/guitar
   // curl -XPOST -H "Content-Type: application/json" http://localhost:8010/api/guitar  --data-binary "@/home/ghazi/workspace/akka-tutorials/src/main/resources/http/guitars.json"
+  // curl -XPOST -H "Content-Type: application/json" "http://localhost:8010/api/guitar/inventory?id=1&quantity=5" // add "" because '&' is a special character
+  // curl -XPOST -H "Content-Type: application/json" http://localhost:8010/api/guitar/inventory?inStock=false
+  // curl -XPOST -H "Content-Type: application/json" http://localhost:8010/api/guitar/inventory?inStock=true
+
 }
