@@ -181,7 +181,8 @@ object DirectivesBreakdown extends App {
   val combinedBlogByIdRoute =
     (path(IntNumber) | parameter('postId.as[Int])) { (blogPostId: Int) => // only 1 param returned
       // 2 extraction directives => 1 combined extraction directive
-      // These 2 extraction directives must of the same type. In our case, it's 'Int'
+      // These 2 extraction directives must of the same type and the same number of parameter. In our case, it's 'Int'
+      // and it's 1 parameter for both directives
 
       // the same server logic
       complete(StatusCodes.OK)
