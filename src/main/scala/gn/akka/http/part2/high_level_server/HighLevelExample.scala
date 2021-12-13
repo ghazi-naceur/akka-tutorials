@@ -12,6 +12,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
 import scala.language.postfixOps
 
+// 3
 object HighLevelExample extends App with GuitarStoreJsonProtocol {
   implicit val system: ActorSystem = ActorSystem("HighLevelExample")
   import akka.stream.Materializer.matFromSystem
