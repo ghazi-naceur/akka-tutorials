@@ -10,6 +10,7 @@ import akka.util.Timeout
 import scala.concurrent.duration.DurationInt
 import scala.language.postfixOps
 
+// 6
 object HandlingRejections extends App {
 
   import spray.json._
@@ -113,6 +114,8 @@ object HandlingRejections extends App {
           println(s"I got a query param rejection: '$m'")
           complete("Rejected query param!")
       }
+      //.handleAll[]
+      //.handleNotFound
       .result()
 
   Http().bindAndHandle(simpleRouteWithHandlers, "localhost", 8030)
