@@ -1,0 +1,9 @@
+{
+  "creditCard": {
+    "serialNumber": "1236-9654-9623-5656",
+    "securityCode": "123456",
+    "account": "ml-ml-ml-ml"
+  },
+  "receiverAccount": "pm-pm-pm-pm",
+  "amount": 300
+}
