@@ -1,6 +1,6 @@
 package gn.akka.persistence.part1.primer
 
-import akka.actor.{ActorLogging, ActorSystem, Props}
+import akka.actor.{ActorLogging, ActorSystem, PoisonPill, Props}
 import akka.persistence.PersistentActor
 
 import java.util.Date
@@ -14,6 +14,11 @@ object PersistentActors extends App {
 
   // The message or the Command
   case class Invoice(recipient: String, date: Date, amount: Int)
+  case class InvoiceBulk(invoices: List[Invoice])
+
+  // special messages
+  case object Shutdown
+
   // The events: data structure that the Persistent Actor will send to the Persistent Store(Journal)
   case class InvoiceRecorded(id: Int, recipient: String, date: Date, amount: Int)
 
@@ -58,6 +63,27 @@ object PersistentActors extends App {
           // to 'sender()', which is the one sending the 'Invoice(...)' command: Correctly identify the sender of the command
           log.info(s"Persisted '$e' as invoice number '${e.id}', for total amount: '$totalAmount'")
         }
+      case InvoiceBulk(invoices) =>
+        /*
+          1- create events
+          2- persist all event
+          3- update the actor state when each event is persisted
+         */
+        val invoicesIds = latestInvoiceId to (latestInvoiceId + invoices.size)
+        val events = invoices.zip(invoicesIds).map { pair =>
+          val id = pair._2
+          val invoice = pair._1
+          InvoiceRecorded(id, invoice.recipient, invoice.date, invoice.amount)
+        }
+        persistAll(events) { e => // single event
+          // the callback will be called in sequence for each event that has been persisted successfully in the Journal
+          log.info(s"Persisted Single '$e' as invoice number '${e.id}', for total amount: '$totalAmount'")
+          latestInvoiceId += 1
+          totalAmount += e.amount
+        }
+
+      case Shutdown => context.stop(self)
+
       // It can act like a normal actor as well:
       case "print" =>
         log.info(s"Latest invoice id: '$latestInvoiceId', total amount: '$totalAmount'")
@@ -73,17 +99,65 @@ object PersistentActors extends App {
         totalAmount += amount
         log.info(s"Recovered invoice '#$id' for amount '$amount', total amount: '$totalAmount'")
     }
+
+    /*
+    Persistence failures:
+      1- Failure to persist the event: The call to persist throws an error
+      2- Rejection: the Journal implementation fails to persist the event/message
+     */
+    // It will be called when the 'persist(event)' fails. The actor will be stopped. Best practise is to restart the actor
+    // after a while (use Backoff supervisor)
+    // seqNr: Sequence number of the event from the Journal's point of view
+    override protected def onPersistFailure(cause: Throwable, event: Any, seqNr: Long): Unit = {
+      log.error(s"Failed to persist '$event', because of '$cause'")
+      super.onPersistFailure(cause, event, seqNr)
+    }
+
+    // It will be called if the Journal throws an exception while persisting the event. In this case, the actor needs
+    // to be RESUMED, not stopped
+    override protected def onPersistRejected(cause: Throwable, event: Any, seqNr: Long): Unit = {
+      log.error(s"Persist rejected for '$event', because of '$cause'")
+      super.onPersistRejected(cause, event, seqNr)
+    }
   }
 
   val system = ActorSystem("PersistentActors")
   val accountant = system.actorOf(Props[Accountant], "simpleAccountant")
-
-  for (i <- 1 to 10) {
-    accountant ! Invoice("Furniture store", new Date, i * 100)
-  }
-
+  // 1- Persist:
+//  for (i <- 1 to 10) {
+//    accountant ! Invoice("Furniture store", new Date, i * 100)
+//  }
   // In the first run, you'll notice in the log that the events are persisted, because the callback ('persist(event)')
   // is called. All these events were tagged with the Persistence ID (simple-accountant).
   // In the second run, you'll notice that all events with the previous Persistence ID (simple-accountant) are
   // recovered/queried (which were persisted in the previous run) from the Journal
+
+  // 2- Persist all:
+  val newInvoices = for (i <- 1 to 5) yield Invoice("New Furniture Corp", new Date, i * 1000)
+  accountant ! InvoiceBulk(newInvoices.toList)
+  // The 'persistAll' is called once, but the callback is called for each invoice/event
+
+  /**
+    * Never call 'persist' or 'persistAll' from Futures, otherwise you risk breaking the actor encapsulation, because the
+    * actor thread is free to process messages while you're persisting. If the actor thread also calls 'persist' or 'persistAll'
+    * you suddenly have 2 threads persisting threads simultaneously, and because the order of messages is not deterministic
+    * you risk corrupting the actor state
+    */
+
+  // 3- Shutdown of Persistent Actor
+  /*
+   Shutdown using 'PoisonPill' or 'Kill' is not ideal.
+   'PoisonPill' or 'Kill' are handled separately, in a separate mailbox, so you risk killing the actor, before it's
+   actually done persisting.
+   Best practise is to define your own "shutdown messages": A Custom message + context.shutdown(self)
+   */
+//  accountant ! PoisonPill
+  // Messages will be sent to the Dead Letter, so invoice actually got to be persisted
+
+  accountant ! Shutdown
+  /*
+  'Shutdown' is a custom message that will be put in the normal mailbox, that guarantees that this message will be
+   handled after the invoices were being successfully sent and handled by the Persistent Actor
+   */
+  // All messages were received and the Actor was safely shutdown
 }
