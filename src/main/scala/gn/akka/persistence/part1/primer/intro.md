@@ -59,4 +59,4 @@ events associated to his **Persistent ID**
 and the actor will change its state as a result
 
 3- The actor is free to receive further messages. If the Actor receives commands in the recovery phase, they 
-will be simply stashed until the recovery has completed 
+will be simply stashed until the recovery has completed
