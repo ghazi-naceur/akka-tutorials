@@ -1,0 +1,2 @@
+select * from public.journal;
+select * from public.snapshot;
