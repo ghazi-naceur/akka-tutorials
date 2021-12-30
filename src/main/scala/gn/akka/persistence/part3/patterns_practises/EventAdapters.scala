@@ -108,7 +108,7 @@ object EventAdapters extends App {
 
         2- a- Extending the trait 'ReadEventAdapter' to create a special read event adapter for the GuitarAdded old event
            'GuitarReadEventAdapter'.
-           b- Remove the handling part of the 'GuitarAddedV2' from 'receiveRecover'
+           b- Remove the handling part of the 'GuitarAdded' from 'receiveRecover'
            c- Set the fully qualified name of the 'GuitarReadEventAdapter' and the old event 'GuitarAdded' inside the
            'application.conf'
          Result:
